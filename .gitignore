@@ -1,0 +1,4 @@
+zig-out/
+zig-cache/
+compile_commands.json
+# freertos/
