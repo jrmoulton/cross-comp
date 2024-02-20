@@ -1,18 +1,16 @@
 # Installation
 
-run `git submodule update --init --recursive`
+- run `git submodule update --init --recursive`
 
-install zig
+- install zig `brew install zig`
 
-`brew install zig`
+- install probe-rs using the below instructions
 
-install probe-rs
-
-## macOS
+#### macOS
 
 `curl --proto '=https' --tlsv1.2 -LsSf https://github.com/probe-rs/probe-rs/releases/download/v0.22.0/probe-rs-installer.sh | sh`
 
-## Windows
+#### Windows
 
 `irm https://github.com/probe-rs/probe-rs/releases/download/v0.22.0/probe-rs-installer.ps1 | iex`
 
@@ -27,6 +25,8 @@ run `zig build run`
 then press the reset button on the device
 
 # Usage
+
+Make sure to add your FreeRTOSConfig.h file to the `include` folder.
 
 The build.zig file defines where includes go (.h files) and where the source files (.c files) go. By
 default source files go in the `src` folder and header files go in the `include` folder.
