@@ -1,0 +1,10 @@
+
+[submodule "freertos"]
+	path = freertos
+	url = https://github.com/FreeRTOS/FreeRTOS-Kernel.git
+[submodule "newlib"]
+	path = newlib
+	url = https://github.com/bminor/newlib
+[submodule "cmsis"]
+	path = cmsis
+	url = git@github.com:ARM-software/CMSIS_5.git
