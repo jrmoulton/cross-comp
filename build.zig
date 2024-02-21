@@ -37,7 +37,7 @@ pub fn build(b: *Builder) void {
 
     var iter = src_dir.iterate();
     while (iter.next() catch unreachable) |entry| {
-        if (std.mem.endsWith(u8, entry.name, ".c") and !std.mem.startsWith(u8, entry.name, "lab")) {
+        if (std.mem.endsWith(u8, entry.name, ".c") and !std.mem.startsWith(u8, entry.name, "main")) {
             const c_file_path = std.fmt.allocPrint(b.allocator, "src/{s}", .{entry.name}) catch unreachable;
             c_files.append(c_file_path) catch unreachable;
         }
