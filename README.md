@@ -1,26 +1,26 @@
 # Installation
 
+- clone the repository
+
 - run `git submodule update --init --recursive`
 
 - install zig
 
-#### macOS
+  - macOS
 
-`brew install zig`
+    - `brew install zig`
 
-#### Windows
-
-https://ziglang.org/learn/getting-started/
+  - Windows
+    - https://ziglang.org/learn/getting-started/
 
 - install probe-rs using the below instructions
 
-#### macOS
+  - macOS
 
-`curl --proto '=https' --tlsv1.2 -LsSf https://github.com/probe-rs/probe-rs/releases/download/v0.22.0/probe-rs-installer.sh | sh`
+    - `curl --proto '=https' --tlsv1.2 -LsSf https://github.com/probe-rs/probe-rs/releases/download/v0.22.0/probe-rs-installer.sh | sh`
 
-#### Windows
-
-`irm https://github.com/probe-rs/probe-rs/releases/download/v0.22.0/probe-rs-installer.ps1 | iex`
+  - Windows
+    - `irm https://github.com/probe-rs/probe-rs/releases/download/v0.22.0/probe-rs-installer.ps1 | iex`
 
 # Build the project
 
