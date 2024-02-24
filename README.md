@@ -40,3 +40,10 @@ The build.zig file defines where includes go (.h files) and where the source fil
 default source files go in the `src` folder and header files go in the `include` folder.
 
 The build.zig also defines what the "main" or "startup" file is. By default it is main.c
+
+Zig also has a `-Doptimize=ReleaseFast` flag to enable optimizations. This significantly reduces the
+binary size which makes flashing significantly faster.
+
+`zig build -Doptimize=ReleaseFast`
+
+`zig build run -Doptimize=ReleaseFast`
