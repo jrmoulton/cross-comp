@@ -2,7 +2,15 @@
 
 - run `git submodule update --init --recursive`
 
-- install zig `brew install zig`
+- install zig
+
+#### macOS
+
+`brew install zig`
+
+#### Windows
+
+https://ziglang.org/learn/getting-started/
 
 - install probe-rs using the below instructions
 
