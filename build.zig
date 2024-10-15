@@ -1,37 +1,27 @@
 const std = @import("std");
-const Builder = std.build.Builder;
+const Build = std.Build;
 const Target = std.Target;
+const ResolvedTarget = std.Build.ResolvedTarget;
 const fs = std.fs;
 const zcc = @import("build/compile_commands.zig");
 
-pub fn build(b: *Builder) void {
+pub fn main() void {
+    std.build.run(build);
+}
+
+pub fn build(b: *Build) void {
     const model = Target.Cpu.Model{ .name = "cortex_m4", .llvm_name = "cortex_m4", .features = Target.Cpu.Feature.Set.empty };
-    const target = b.standardTargetOptions(.{ .default_target = .{
+    const target_arch = b.standardTargetOptions(.{ .default_target = .{
         .cpu_arch = .thumb,
         .cpu_model = .{ .explicit = &model },
         .os_tag = .freestanding,
         .abi = .eabihf,
         .ofmt = .elf,
     } });
-    const mode = b.standardOptimizeOption(.{});
-    var targets = std.ArrayList(*std.Build.CompileStep).init(b.allocator);
-
-    const exe = b.addExecutable(.{
-        .name = "tmp",
-        .root_source_file = .{ .path = "src/main.c" },
-        .target = target,
-        .optimize = mode,
-        .link_libc = false,
-    });
-
-    exe.addObjectFile(std.build.LazyPath.relative("libs/libc/crt0.o"));
-    exe.addObjectFile(std.build.LazyPath.relative("libs/libc/libg_nano.a"));
-    exe.addObjectFile(std.build.LazyPath.relative("libs/libc/libnosys.a"));
-    exe.addObjectFile(std.build.LazyPath.relative("libs/libc/libm.a"));
 
     const CFilesList = std.ArrayList([]const u8);
 
-    var src_dir = fs.cwd().openIterableDir("src/", .{}) catch unreachable;
+    var src_dir = fs.cwd().openDir("src/", .{ .iterate = true }) catch unreachable;
     var c_files: CFilesList = CFilesList.init(b.allocator);
     defer c_files.deinit();
 
@@ -45,69 +35,119 @@ pub fn build(b: *Builder) void {
     src_dir.close();
 
     // startup
-    const CFilesList2 = std.ArrayList([]const u8);
-    var src_dir2 = fs.cwd().openIterableDir("startup/src/", .{}) catch unreachable;
-    var c_files2: CFilesList = CFilesList2.init(b.allocator);
-    defer c_files2.deinit();
+    var src_dir2 = fs.cwd().openDir("startup/src/", .{ .iterate = true }) catch unreachable;
 
     var iter2 = src_dir2.iterate();
     while (iter2.next() catch unreachable) |entry| {
         if (std.mem.endsWith(u8, entry.name, ".c")) {
             const c_file_path = std.fmt.allocPrint(b.allocator, "startup/src/{s}", .{entry.name}) catch unreachable;
-            c_files2.append(c_file_path) catch unreachable;
+            c_files.append(c_file_path) catch unreachable;
         }
     }
     src_dir2.close();
 
     // freertos source files
-    const CFilesList3 = std.ArrayList([]const u8);
-    var src_dir3 = fs.cwd().openIterableDir("freertos", .{}) catch unreachable;
-    var c_files3: CFilesList = CFilesList3.init(b.allocator);
-    defer c_files3.deinit();
+    var src_dir3 = fs.cwd().openDir("freertos", .{ .iterate = true }) catch unreachable;
 
     var iter3 = src_dir3.iterate();
     while (iter3.next() catch unreachable) |entry| {
         if (std.mem.endsWith(u8, entry.name, ".c")) {
             const c_file_path = std.fmt.allocPrint(b.allocator, "freertos/{s}", .{entry.name}) catch unreachable;
-            c_files3.append(c_file_path) catch unreachable;
+            c_files.append(c_file_path) catch unreachable;
         }
     }
     src_dir3.close();
 
-    exe.addCSourceFile(.{ .file = std.build.LazyPath.relative("./freertos/portable/MemMang/heap_4.c"), .flags = &[_][]const u8{ "-Wall", "-Wextra" } });
-    exe.addCSourceFile(.{ .file = std.build.LazyPath.relative("freertos/portable/GCC/ARM_CM4F/port.c"), .flags = &[_][]const u8{ "-Wall", "-Wextra" } });
-    exe.addCSourceFiles(c_files.items, &[_][]const u8{
-        "-Wall",
-        "-Wextra",
-    });
-    exe.addCSourceFiles(c_files2.items, &[_][]const u8{
-        "-Wall",
-        "-Wextra",
-    });
-    exe.addCSourceFiles(c_files3.items, &[_][]const u8{});
+    var targets = std.ArrayList(*std.Build.Step.Compile).init(b.allocator);
 
-    exe.setLinkerScript(std.build.LazyPath.relative("startup/linkerscript.ld"));
-    exe.addAssemblyFile(std.build.LazyPath.relative("startup/src/startup_stm32l476xx.S"));
-    exe.addIncludePath(std.build.LazyPath.relative("cmsis/CMSIS/Core/Include"));
-    exe.addIncludePath(std.build.LazyPath.relative("freertos/include"));
-    exe.addIncludePath(std.build.LazyPath.relative("freertos/portable/GCC/ARM_CM4F"));
-    exe.addIncludePath(std.build.LazyPath.relative("libs/libc/include"));
-    exe.addIncludePath(std.build.LazyPath.relative("include/"));
-    exe.addIncludePath(std.build.LazyPath.relative("startup/include/"));
-    targets.append(exe) catch @panic("OOM");
+    const install_all = b.step("all", "Build and install all targets");
 
-    b.installArtifact(exe);
+    const mode = b.standardOptimizeOption(.{});
+
+    addExecutable(b, target_arch, &targets, mode, install_all, "stack", "src/main.c", c_files.items);
+
+    const targets_clone = targets.clone() catch unreachable;
 
     const cdb_step = zcc.createStep(b, "cdb", targets.toOwnedSlice() catch unreachable);
-    exe.step.dependOn(cdb_step);
-
-    const flash_step = b.addSystemCommand(&[_][]const u8{ "probe-rs", "download", "zig-out/bin/tmp", "--chip", "STM32L476RGTx" });
-    flash_step.step.dependOn(b.getInstallStep());
-
-    const run_step = b.step("run", "Flash and run the app on the board");
-    run_step.dependOn(&flash_step.step);
+    for (targets_clone.items) |target| {
+        target.step.dependOn(cdb_step);
+    }
+    b.default_step.dependOn(cdb_step);
 }
 
-pub fn main() void {
-    std.build.run(build);
+fn addExecutable(
+    b: *Build,
+    target: ResolvedTarget,
+    targets: *std.ArrayList(*std.Build.Step.Compile),
+    mode: std.builtin.OptimizeMode,
+    install_all: *Build.Step,
+    name: []const u8,
+    src_path: []const u8,
+    c_files: []const []const u8,
+) void {
+    const exe = b.addExecutable(.{
+        .name = name,
+        .optimize = mode,
+        .target = target,
+    });
+    // exe.linkLibCpp();
+    exe.linkLibC();
+
+    exe.addObjectFile(.{ .src_path = .{ .owner = b, .sub_path = "libs/libc/crt0.o" } });
+    exe.addObjectFile(.{ .src_path = .{ .owner = b, .sub_path = "libs/libc/libg_nano.a" } });
+    exe.addObjectFile(.{ .src_path = .{ .owner = b, .sub_path = "libs/libc/libnosys.a" } });
+    exe.addObjectFile(.{ .src_path = .{ .owner = b, .sub_path = "libs/libc/libm.a" } });
+
+    exe.setLinkerScript(.{ .src_path = .{ .owner = b, .sub_path = "startup/linkerscript.ld" } });
+    exe.addAssemblyFile(.{ .src_path = .{ .owner = b, .sub_path = "startup/src/startup_stm32l476xx.S" } });
+    exe.addIncludePath(.{ .src_path = .{ .owner = b, .sub_path = "cmsis/CMSIS/Core/Include" } });
+
+    exe.addIncludePath(.{ .src_path = .{ .owner = b, .sub_path = "freertos/include" } });
+    exe.addIncludePath(.{ .src_path = .{ .owner = b, .sub_path = "freertos/portable/GCC/ARM_CM4F" } });
+    exe.addIncludePath(.{ .src_path = .{ .owner = b, .sub_path = "include/" } });
+    exe.addIncludePath(.{ .src_path = .{ .owner = b, .sub_path = "startup/include/" } });
+
+    exe.addCSourceFile(.{ .file = .{ .src_path = .{ .owner = b, .sub_path = "./freertos/portable/MemMang/heap_4.c" } }, .flags = &[_][]const u8{ "-Wall", "-Wextra" } });
+    exe.addCSourceFile(.{ .file = .{ .src_path = .{ .owner = b, .sub_path = "freertos/portable/GCC/ARM_CM4F/port.c" } }, .flags = &[_][]const u8{ "-Wall", "-Wextra" } });
+
+    exe.addCSourceFile(.{
+        .file = .{ .src_path = .{ .owner = b, .sub_path = src_path } },
+        .flags = &.{
+            "-Wall",
+            "-Wextra",
+            // "-std=c++23",
+        },
+    });
+
+    exe.addCSourceFiles(.{
+        .files = c_files,
+        .flags = &.{
+            "-Wall",
+            "-Wextra",
+            // "-std=c++23",
+        },
+    });
+
+    exe.addIncludePath(.{ .src_path = .{ .owner = b, .sub_path = "include/" } });
+
+    targets.append(exe) catch @panic("OOM");
+    const run_artifact = b.addRunArtifact(exe);
+    const install_artifact = b.addInstallArtifact(exe, .{ .dest_dir = .{ .override = .{ .custom = "../target" } } });
+    install_all.dependOn(&install_artifact.step);
+
+    var run_step_name_buffer: [64]u8 = undefined;
+    const run_step_name = std.fmt.bufPrint(&run_step_name_buffer, "run-{s}", .{name}) catch @panic("OOM");
+    var run_step_description_buffer: [64]u8 = undefined;
+    const run_description = std.fmt.bufPrint(&run_step_description_buffer, "Build and run the {s} program", .{run_step_name}) catch @panic("OOM");
+    const run_step = b.step(run_step_name, run_description);
+
+    var build_step_name_buffer: [64]u8 = undefined;
+    const build_step_name = std.fmt.bufPrint(&build_step_name_buffer, "{s}", .{name}) catch @panic("OOM");
+    var build_step_description_buffer: [64]u8 = undefined;
+    const build_description = std.fmt.bufPrint(&build_step_description_buffer, "Build the {s} program", .{build_step_name}) catch @panic("OOM");
+    const build_step = b.step(build_step_name, build_description);
+
+    build_step.dependOn(&install_artifact.step);
+    run_step.dependOn(&install_artifact.step);
+    run_step.dependOn(&run_artifact.step);
 }
