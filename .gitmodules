@@ -1,7 +1,4 @@
 
-[submodule "freertos"]
-	path = freertos
-	url = https://github.com/FreeRTOS/FreeRTOS-Kernel.git
 [submodule "cmsis"]
 	path = cmsis
 	url = https://github.com/ARM-software/CMSIS_5

@@ -10,6 +10,8 @@ pub fn main() void {
 }
 
 pub fn build(b: *Build) void {
+    const executables = [_][]const u8{"lab1"};
+
     const model = Target.Cpu.Model{ .name = "cortex_m4", .llvm_name = "cortex_m4", .features = Target.Cpu.Feature.Set.empty };
     const target_arch = b.standardTargetOptions(.{ .default_target = .{
         .cpu_arch = .thumb,
@@ -27,9 +29,12 @@ pub fn build(b: *Build) void {
 
     var iter = src_dir.iterate();
     while (iter.next() catch unreachable) |entry| {
-        if (std.mem.endsWith(u8, entry.name, ".c") and !std.mem.startsWith(u8, entry.name, "main")) {
-            const c_file_path = std.fmt.allocPrint(b.allocator, "src/{s}", .{entry.name}) catch unreachable;
-            c_files.append(c_file_path) catch unreachable;
+        if (std.mem.endsWith(u8, entry.name, ".c")) {
+            const should_include = !isExecutableSource(entry.name, &executables);
+            if (should_include) {
+                const c_file_path = std.fmt.allocPrint(b.allocator, "src/{s}", .{entry.name}) catch unreachable;
+                c_files.append(c_file_path) catch unreachable;
+            }
         }
     }
     src_dir.close();
@@ -47,16 +52,16 @@ pub fn build(b: *Build) void {
     src_dir2.close();
 
     // freertos source files
-    var src_dir3 = fs.cwd().openDir("freertos", .{ .iterate = true }) catch unreachable;
+    // var src_dir3 = fs.cwd().openDir("freertos", .{ .iterate = true }) catch unreachable;
 
-    var iter3 = src_dir3.iterate();
-    while (iter3.next() catch unreachable) |entry| {
-        if (std.mem.endsWith(u8, entry.name, ".c")) {
-            const c_file_path = std.fmt.allocPrint(b.allocator, "freertos/{s}", .{entry.name}) catch unreachable;
-            c_files.append(c_file_path) catch unreachable;
-        }
-    }
-    src_dir3.close();
+    // var iter3 = src_dir3.iterate();
+    // while (iter3.next() catch unreachable) |entry| {
+    //     if (std.mem.endsWith(u8, entry.name, ".c")) {
+    //         const c_file_path = std.fmt.allocPrint(b.allocator, "freertos/{s}", .{entry.name}) catch unreachable;
+    //         c_files.append(c_file_path) catch unreachable;
+    //     }
+    // }
+    // src_dir3.close();
 
     var targets = std.ArrayList(*std.Build.Step.Compile).init(b.allocator);
 
@@ -64,7 +69,10 @@ pub fn build(b: *Build) void {
 
     const mode = b.standardOptimizeOption(.{});
 
-    addExecutable(b, target_arch, &targets, mode, install_all, "stack", "src/main.c", c_files.items);
+    for (executables) |exe| {
+        const src_path = std.fmt.allocPrint(b.allocator, "src/{s}.c", .{exe}) catch unreachable;
+        addExecutable(b, target_arch, &targets, mode, install_all, exe, src_path, c_files.items);
+    }
 
     const targets_clone = targets.clone() catch unreachable;
 
@@ -91,7 +99,7 @@ fn addExecutable(
         .target = target,
     });
     // exe.linkLibCpp();
-    exe.linkLibC();
+    // exe.linkLibC();
 
     exe.addObjectFile(.{ .src_path = .{ .owner = b, .sub_path = "libs/libc/crt0.o" } });
     exe.addObjectFile(.{ .src_path = .{ .owner = b, .sub_path = "libs/libc/libg_nano.a" } });
@@ -102,13 +110,14 @@ fn addExecutable(
     exe.addAssemblyFile(.{ .src_path = .{ .owner = b, .sub_path = "startup/src/startup_stm32l476xx.S" } });
     exe.addIncludePath(.{ .src_path = .{ .owner = b, .sub_path = "cmsis/CMSIS/Core/Include" } });
 
-    exe.addIncludePath(.{ .src_path = .{ .owner = b, .sub_path = "freertos/include" } });
-    exe.addIncludePath(.{ .src_path = .{ .owner = b, .sub_path = "freertos/portable/GCC/ARM_CM4F" } });
+    // exe.addIncludePath(.{ .src_path = .{ .owner = b, .sub_path = "freertos/include" } });
+    // exe.addIncludePath(.{ .src_path = .{ .owner = b, .sub_path = "freertos/portable/GCC/ARM_CM4F" } });
+    // exe.addCSourceFile(.{ .file = .{ .src_path = .{ .owner = b, .sub_path = "./freertos/portable/MemMang/heap_4.c" } }, .flags = &[_][]const u8{ "-Wall", "-Wextra" } });
+    // exe.addCSourceFile(.{ .file = .{ .src_path = .{ .owner = b, .sub_path = "freertos/portable/GCC/ARM_CM4F/port.c" } }, .flags = &[_][]const u8{ "-Wall", "-Wextra" } });
+
+    exe.addIncludePath(.{ .src_path = .{ .owner = b, .sub_path = "libs/libc/include" } });
     exe.addIncludePath(.{ .src_path = .{ .owner = b, .sub_path = "include/" } });
     exe.addIncludePath(.{ .src_path = .{ .owner = b, .sub_path = "startup/include/" } });
-
-    exe.addCSourceFile(.{ .file = .{ .src_path = .{ .owner = b, .sub_path = "./freertos/portable/MemMang/heap_4.c" } }, .flags = &[_][]const u8{ "-Wall", "-Wextra" } });
-    exe.addCSourceFile(.{ .file = .{ .src_path = .{ .owner = b, .sub_path = "freertos/portable/GCC/ARM_CM4F/port.c" } }, .flags = &[_][]const u8{ "-Wall", "-Wextra" } });
 
     exe.addCSourceFile(.{
         .file = .{ .src_path = .{ .owner = b, .sub_path = src_path } },
@@ -131,15 +140,18 @@ fn addExecutable(
     exe.addIncludePath(.{ .src_path = .{ .owner = b, .sub_path = "include/" } });
 
     targets.append(exe) catch @panic("OOM");
-    const run_artifact = b.addRunArtifact(exe);
+    var flash_art_name_buffer: [64]u8 = undefined;
+    const flash_art_name = std.fmt.bufPrint(&flash_art_name_buffer, "target/{s}", .{name}) catch @panic("OOM");
+    const flash_artifact = b.addSystemCommand(&[_][]const u8{ "probe-rs", "download", flash_art_name, "--chip", "STM32L476RGTx" });
+
     const install_artifact = b.addInstallArtifact(exe, .{ .dest_dir = .{ .override = .{ .custom = "../target" } } });
     install_all.dependOn(&install_artifact.step);
 
-    var run_step_name_buffer: [64]u8 = undefined;
-    const run_step_name = std.fmt.bufPrint(&run_step_name_buffer, "run-{s}", .{name}) catch @panic("OOM");
-    var run_step_description_buffer: [64]u8 = undefined;
-    const run_description = std.fmt.bufPrint(&run_step_description_buffer, "Build and run the {s} program", .{run_step_name}) catch @panic("OOM");
-    const run_step = b.step(run_step_name, run_description);
+    var flash_step_name_buffer: [64]u8 = undefined;
+    const flash_step_name = std.fmt.bufPrint(&flash_step_name_buffer, "flash-{s}", .{name}) catch @panic("OOM");
+    var flash_step_description_buffer: [64]u8 = undefined;
+    const flash_description = std.fmt.bufPrint(&flash_step_description_buffer, "Build and flash the {s} program", .{flash_step_name}) catch @panic("OOM");
+    const flash_step = b.step(flash_step_name, flash_description);
 
     var build_step_name_buffer: [64]u8 = undefined;
     const build_step_name = std.fmt.bufPrint(&build_step_name_buffer, "{s}", .{name}) catch @panic("OOM");
@@ -148,6 +160,17 @@ fn addExecutable(
     const build_step = b.step(build_step_name, build_description);
 
     build_step.dependOn(&install_artifact.step);
-    run_step.dependOn(&install_artifact.step);
-    run_step.dependOn(&run_artifact.step);
+    flash_step.dependOn(&install_artifact.step);
+    flash_step.dependOn(&flash_artifact.step);
+}
+
+fn isExecutableSource(filename: []const u8, executables: []const []const u8) bool {
+    for (executables) |exe| {
+        const exe_filename = std.fmt.allocPrint(std.heap.page_allocator, "{s}.c", .{exe}) catch unreachable;
+        defer std.heap.page_allocator.free(exe_filename);
+        if (std.mem.eql(u8, filename, exe_filename)) {
+            return true;
+        }
+    }
+    return false;
 }

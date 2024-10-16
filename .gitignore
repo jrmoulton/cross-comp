@@ -1,4 +1,7 @@
 zig-out/
 zig-cache/
+.zig-cache/
 compile_commands.json
-# freertos/
+freertos/
+cmsis/
+libs/libc
